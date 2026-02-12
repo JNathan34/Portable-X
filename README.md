@@ -3,6 +3,8 @@ Created by Jacob Nathan.
 
 Portable X is a portable application launcher and organizer for your PortableApps setup. It helps you scan, manage, and launch apps from your drive, and provides system-style folders and settings for your portable environment.
 
+<img width="524" height="488" alt="Screenshot 2026-02-12 010440" src="https://github.com/user-attachments/assets/0fff33a9-b5e3-421a-b964-4f971f9ffe9b" />
+
 ## Features
 - Scans `PortableApps\` and reads `appinfo.ini` metadata when available
 - Categories, favorites, renames, and hidden apps
