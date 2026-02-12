@@ -1,0 +1,12 @@
+Portable X
+Copyright (c) 2026 Jacob Nathan
+
+All rights reserved.
+
+This software is provided for personal use only.
+You may not copy, modify, distribute, sublicense, sell, or
+redistribute this software in any form.
+
+You may not claim this software or any part of it as your own.
+
+Unauthorized distribution is strictly prohibited.
