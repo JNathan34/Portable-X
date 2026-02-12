@@ -1,0 +1,150 @@
+Portable X Packaging Instructions (AI Build Guide)
+==================================================
+
+Scope
+-----
+This guide describes the exact, repeatable steps to package Portable X into:
+1) The app executable (PortableX.exe)
+2) The installer executable (Portable X Installer.exe)
+
+It also documents common failure modes and required file layout. Follow it
+exactly to avoid missing assets or broken runtime behavior.
+
+Current Version
+---------------
+- Portable X version: 1.5
+
+
+Prerequisites
+-------------
+- Windows 10/11 environment.
+- Python 3.11 installed and accessible as `python`.
+- PyInstaller available for that Python:
+  - Install: python -m pip install pyinstaller
+  - Use module form: python -m PyInstaller ...
+- Inno Setup compiler available at:
+  - tools\innosetup\ISCC.exe
+- Working directory must be project root:
+  - D:\Project X\Project X
+
+
+Inputs / Required Files
+-----------------------
+These files/folders must exist in the project root:
+- main.py
+- PortableX.spec
+- installer.iss
+- icon.png
+- install.ico
+- wizard-large.png
+- wizard-small.png
+- PortableApps\ (full folder tree)
+- folder icons\ (documents.ico, downloads.ico, music.ico, pictures.ico, videos.ico)
+
+Browser installers:
+- Downloaded on demand by the installer (no local files required).
+
+
+Important Behavior to Preserve
+------------------------------
+1) The app must never write to user profile temp locations; it uses:
+   PortableApps\PortableX\Data for settings and data.
+2) The first-run Notice popup must appear when the user launches the app
+   from the installer completion page. This is enforced by passing:
+   --show-notice
+   to the app at the end of the installer.
+3) The installer must always prompt for install location (no "previous
+   dir" reuse), allow root installs (AllowRootDirectory=yes), no automatic
+   "PortableX" subfolder (AppendDefaultDirName=no), and no desktop/start menu
+   shortcut prompts.
+4) The installer must install the “folder icons” inside:
+   {app}\PortableApps\PortableX\folder icons
+5) The app should run with no console window.
+
+
+Build Step A: App EXE (PortableX.exe)
+-------------------------------------
+Run from project root:
+
+1) Build with PyInstaller using the existing spec:
+   python -m PyInstaller PortableX.spec
+
+2) The output folder will be created at:
+   dist\PortableX\
+   (PortableX.exe lives inside this folder)
+
+Notes:
+- Do not edit the spec during packaging unless explicitly requested.
+- If the console window appears when running the app, the spec or entry
+  point is likely wrong (it should use the windowed bootloader).
+
+
+Build Step B: Installer EXE (Portable X Installer.exe)
+------------------------------------------------------
+Use the bundled Inno Setup compiler (portable copy in tools\innosetup):
+
+1) Compile:
+   tools\innosetup\ISCC.exe installer.iss
+
+2) Output:
+   dist\Portable X Installer.exe
+
+If the compile fails with:
+  "Error 32: The process cannot access the file because it is being used by another process."
+Then the old installer EXE is locked by another program (Explorer preview,
+antivirus, or running installer/Compil32). Close the lock holder and re-run.
+
+If it still fails, compile to a new name:
+  tools\innosetup\ISCC.exe /F"Portable X Installer (new)" installer.iss
+Then rename it to the expected name after releasing the lock.
+
+
+Verification Checklist (Mandatory)
+-----------------------------------
+1) PortableX.exe exists in the project root and is recent.
+2) Portable X Installer.exe exists and is recent.
+3) Installer uses icon.png on the wizard, not install.ico.
+4) Installer finish page checkbox:
+   - Label: "Open Portable X"
+   - Checked by default
+   - Launches: {app}\PortableX.exe --show-notice
+5) Installer creates:
+   - {app}\PortableApps\PortableX\Data
+   - {app}\Documents, Downloads, Music, Pictures, Videos
+   - desktop.ini in those folders with custom icon references
+6) Uninstaller files are hidden:
+   - {app}\unins000.exe
+   - {app}\unins000.dat
+7) Browser installer files copied into:
+   - {app}\PortableApps\PortableX\Installers
+   - BravePortable is copied as a folder
+8) Version strings are correct:
+   - About > Software shows "Portable X v1.5" and "Version: 1.5"
+   - Notice title shows "Portable X v1.5 - Notice"
+
+
+Known Warning Messages (Safe to Ignore)
+---------------------------------------
+During ISCC build:
+- "Architecture identifier 'x64' is deprecated..."
+  Safe. (May be updated later.)
+- "Support function 'FileCopy' has been renamed..."
+  Safe. (Optional code cleanup later.)
+
+
+Do NOT Do These
+---------------
+- Do not embed the full PortableApps folder inside the app executable.
+  The app reads from PortableApps on disk; the installer deploys that folder.
+- Do not change the output base filename unless asked.
+- Do not remove the --show-notice parameter in installer [Run].
+- Do not change the data directory away from:
+  PortableApps\PortableX\Data
+
+
+Summary Commands (Copy/Paste)
+-----------------------------
+From D:\Project X\Project X:
+
+python -m PyInstaller PortableX.spec
+tools\innosetup\ISCC.exe installer.iss

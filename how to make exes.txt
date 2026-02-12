@@ -1,0 +1,17 @@
+Portable X - How To Make EXEs
+=============================
+
+App EXE
+-------
+Run:
+python -m PyInstaller PortableX.spec
+
+Installer EXE
+-------------
+Run:
+tools\innosetup\ISCC.exe installer.iss
+
+Outputs
+-------
+- dist\PortableX\PortableX.exe (plus supporting files in dist\PortableX)
+- dist\Portable X Installer.exe

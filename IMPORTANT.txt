@@ -1,0 +1,19 @@
+ok i want to make a differnt exe now that is a setup file it will create the exe file aswell as the PortableApps folder with the Portable X folder in it with all the data aswell as 
+"D:\Project X\Project X\Videos"
+"D:\Project X\Project X\Pictures"
+"D:\Project X\Project X\Music"
+"D:\Project X\Project X\Downloads"
+"D:\Project X\Project X\documents"
+also have it create these folder with the files in that they have already 
+"D:\Project X\Project X\install.ico"
+use this icon for the install.exe
+in the install aswell i want to choose option like default browser i want there to be icons in the install setup as well and i need to be able to choose were i install it
+use these icons to make custom folders for the downloads folder documents ect
+"D:\Project X\Project X\folder icons"
+
+ok so i put them all in here 
+documents.ico
+downloads.ico
+music.ico
+pictures.ico
+videos.ico
