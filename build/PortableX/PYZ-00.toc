@@ -42,6 +42,7 @@
    'C:\\Program '
    'Files\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\\Lib\\_threading_local.py',
    'PYMODULE'),
+  ('app_info', 'D:\\Project X\\Project X\\app_info.py', 'PYMODULE'),
   ('argparse',
    'C:\\Program '
    'Files\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\\Lib\\argparse.py',
@@ -501,6 +502,7 @@
   ('ui_options', 'D:\\Project X\\Project X\\ui_options.py', 'PYMODULE'),
   ('ui_search', 'D:\\Project X\\Project X\\ui_search.py', 'PYMODULE'),
   ('ui_sidebar', 'D:\\Project X\\Project X\\ui_sidebar.py', 'PYMODULE'),
+  ('update_checker', 'D:\\Project X\\Project X\\update_checker.py', 'PYMODULE'),
   ('urllib',
    'C:\\Program '
    'Files\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\\Lib\\urllib\\__init__.py',

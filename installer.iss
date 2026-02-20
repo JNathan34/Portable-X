@@ -1,6 +1,6 @@
 ; PortableX installer
 #define MyAppName "PortableX"
-#define MyAppVersion "1.5"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "PortableX"
 #define MyAppExeName "PortableX.exe"
 
@@ -27,13 +27,18 @@ WizardSmallImageFile=wizard-small.png
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 
 [Files]
 Source: "dist\PortableX\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
 Source: "icon.png"; DestDir: "{app}"; Flags: ignoreversion
-Source: "PortableApps\*"; DestDir: "{app}\PortableApps"; Flags: recursesubdirs createallsubdirs; Excludes: "PortableX\Data\_tmp\*;PortableX\Data\tmp\*"
+Source: "PortableApps\PortableX\App\*"; DestDir: "{app}\PortableApps\PortableX\App"; Flags: recursesubdirs createallsubdirs
+Source: "PortableApps\PortableX\Graphics\*"; DestDir: "{app}\PortableApps\PortableX\Graphics"; Flags: recursesubdirs createallsubdirs; Excludes: "browsericons\*.png,profilepic\*"
+; Keep existing profile picture assets on reinstall/update
+Source: "PortableApps\PortableX\Graphics\profilepic\*"; DestDir: "{app}\PortableApps\PortableX\Graphics\profilepic"; Flags: recursesubdirs createallsubdirs onlyifdoesntexist
+Source: "PortableApps\PortableX\Data\brave appinfo\appinfo\*"; DestDir: "{app}\PortableApps\PortableX\Data\brave appinfo\appinfo"; Flags: recursesubdirs createallsubdirs onlyifdoesntexist
 Source: "folder icons\*"; DestDir: "{app}\PortableApps\PortableX\folder icons"; Flags: recursesubdirs createallsubdirs
 Source: "PortableApps\PortableX\Graphics\browsericons\brave.png"; Flags: dontcopy
 Source: "PortableApps\PortableX\Graphics\browsericons\chrome.png"; Flags: dontcopy
@@ -50,37 +55,11 @@ Name: "{app}\Music"
 Name: "{app}\Downloads"
 Name: "{app}\documents"
 
-[INI]
-FileName: "{app}\Videos\desktop.ini"; Section: ".ShellClassInfo"; Key: "IconResource"; String: "..\PortableApps\PortableX\folder icons\videos.ico,0"
-FileName: "{app}\Videos\desktop.ini"; Section: ".ShellClassInfo"; Key: "IconFile"; String: "..\PortableApps\PortableX\folder icons\videos.ico"
-FileName: "{app}\Videos\desktop.ini"; Section: ".ShellClassInfo"; Key: "IconIndex"; String: "0"
-FileName: "{app}\Pictures\desktop.ini"; Section: ".ShellClassInfo"; Key: "IconResource"; String: "..\PortableApps\PortableX\folder icons\pictures.ico,0"
-FileName: "{app}\Pictures\desktop.ini"; Section: ".ShellClassInfo"; Key: "IconFile"; String: "..\PortableApps\PortableX\folder icons\pictures.ico"
-FileName: "{app}\Pictures\desktop.ini"; Section: ".ShellClassInfo"; Key: "IconIndex"; String: "0"
-FileName: "{app}\Music\desktop.ini"; Section: ".ShellClassInfo"; Key: "IconResource"; String: "..\PortableApps\PortableX\folder icons\music.ico,0"
-FileName: "{app}\Music\desktop.ini"; Section: ".ShellClassInfo"; Key: "IconFile"; String: "..\PortableApps\PortableX\folder icons\music.ico"
-FileName: "{app}\Music\desktop.ini"; Section: ".ShellClassInfo"; Key: "IconIndex"; String: "0"
-FileName: "{app}\Downloads\desktop.ini"; Section: ".ShellClassInfo"; Key: "IconResource"; String: "..\PortableApps\PortableX\folder icons\downloads.ico,0"
-FileName: "{app}\Downloads\desktop.ini"; Section: ".ShellClassInfo"; Key: "IconFile"; String: "..\PortableApps\PortableX\folder icons\downloads.ico"
-FileName: "{app}\Downloads\desktop.ini"; Section: ".ShellClassInfo"; Key: "IconIndex"; String: "0"
-FileName: "{app}\documents\desktop.ini"; Section: ".ShellClassInfo"; Key: "IconResource"; String: "..\PortableApps\PortableX\folder icons\documents.ico,0"
-FileName: "{app}\documents\desktop.ini"; Section: ".ShellClassInfo"; Key: "IconFile"; String: "..\PortableApps\PortableX\folder icons\documents.ico"
-FileName: "{app}\documents\desktop.ini"; Section: ".ShellClassInfo"; Key: "IconIndex"; String: "0"
-
 [Run]
-Filename: "{cmd}"; Parameters: "/c attrib +r ""{app}\Videos"""; Flags: runhidden
-Filename: "{cmd}"; Parameters: "/c attrib +r ""{app}\Pictures"""; Flags: runhidden
-Filename: "{cmd}"; Parameters: "/c attrib +r ""{app}\Music"""; Flags: runhidden
-Filename: "{cmd}"; Parameters: "/c attrib +r ""{app}\Downloads"""; Flags: runhidden
-Filename: "{cmd}"; Parameters: "/c attrib +r ""{app}\documents"""; Flags: runhidden
-Filename: "{cmd}"; Parameters: "/c attrib +s +h ""{app}\Videos\desktop.ini"""; Flags: runhidden
-Filename: "{cmd}"; Parameters: "/c attrib +s +h ""{app}\Pictures\desktop.ini"""; Flags: runhidden
-Filename: "{cmd}"; Parameters: "/c attrib +s +h ""{app}\Music\desktop.ini"""; Flags: runhidden
-Filename: "{cmd}"; Parameters: "/c attrib +s +h ""{app}\Downloads\desktop.ini"""; Flags: runhidden
-Filename: "{cmd}"; Parameters: "/c attrib +s +h ""{app}\documents\desktop.ini"""; Flags: runhidden
 Filename: "{cmd}"; Parameters: "/c attrib +h ""{app}\unins000.exe"""; Flags: runhidden
 Filename: "{cmd}"; Parameters: "/c attrib +h ""{app}\unins000.dat"""; Flags: runhidden
 Filename: "{cmd}"; Parameters: "/c attrib +h ""{app}\icon.png"""; Flags: runhidden
+Filename: "{cmd}"; Parameters: "/c attrib +h ""{app}\_internal"""; Flags: runhidden
 Filename: "{app}\PortableX.exe"; Parameters: "--show-notice"; Description: "Open Portable X"; Flags: postinstall nowait skipifsilent
 Filename: "{cmd}"; Parameters: "/c start """" /min cmd /c ""ping 127.0.0.1 -n 6 >nul & del /f /q """"{srcexe}"""""""; Description: "Delete installer after finish"; Flags: postinstall unchecked skipifsilent runhidden nowait
 
@@ -89,9 +68,49 @@ var
   BrowserPage: TWizardPage;
   BrowserRadios: array of TRadioButton;
   BrowserIcons: array of TBitmapImage;
+  PreExistingVideosDir: Boolean;
+  PreExistingPicturesDir: Boolean;
+  PreExistingMusicDir: Boolean;
+  PreExistingDownloadsDir: Boolean;
+  PreExistingDocumentsDir: Boolean;
 
 function URLDownloadToFile(Caller: Integer; URL: string; FileName: string; Reserved: Integer; StatusCB: Integer): Integer;
   external 'URLDownloadToFileW@urlmon.dll stdcall';
+
+function CanWriteToDirectory(TargetDir: string): Boolean;
+var
+  ProbeFile: string;
+begin
+  Result := False;
+  try
+    if TargetDir = '' then
+      Exit;
+    if not ForceDirectories(TargetDir) then
+      Exit;
+    ProbeFile := AddBackslash(TargetDir) + '__portablex_write_test_' +
+      GetDateTimeString('yyyymmddhhnnsszzz', '-', '-') + '.tmp';
+    if SaveStringToFile(ProbeFile, 'test', False) then begin
+      DeleteFile(ProbeFile);
+      Result := True;
+    end;
+  except
+    Result := False;
+  end;
+end;
+
+procedure RestartInstallerAsAdmin(TargetDir: string);
+var
+  Params: string;
+  ResultCode: Integer;
+begin
+  Params := Trim(GetCmdTail());
+  if Pos('/DIR=', Uppercase(Params)) = 0 then begin
+    if Params <> '' then
+      Params := Params + ' ';
+    Params := Params + '/DIR="' + TargetDir + '"';
+  end;
+  ShellExec('runas', ExpandConstant('{srcexe}'), Params, '', SW_SHOWNORMAL, ewNoWait, ResultCode);
+end;
 
 function GetBrowserChoiceIndex: Integer;
 var
@@ -195,12 +214,40 @@ begin
           if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
             CopyDir(SourceDir + '\' + FindRec.Name, DestDir + '\' + FindRec.Name)
           else
-            FileCopy(SourceDir + '\' + FindRec.Name, DestDir + '\' + FindRec.Name, False);
+            FileCopy(SourceDir + '\' + FindRec.Name, DestDir + '\' + FindRec.Name, True);
         end;
       until not FindNext(FindRec);
     finally
       FindClose(FindRec);
     end;
+  end;
+end;
+
+procedure EnsureDesktopIniIfMissing(const FolderPath, IconFileName: string);
+var
+  DesktopIniPath: string;
+  Content: string;
+  ResultCode: Integer;
+begin
+  if (FolderPath = '') or (IconFileName = '') then
+    Exit;
+
+  if not DirExists(FolderPath) then
+    Exit;
+
+  DesktopIniPath := AddBackslash(FolderPath) + 'desktop.ini';
+  if FileExists(DesktopIniPath) then
+    Exit;
+
+  Content :=
+    '[.ShellClassInfo]' + #13#10 +
+    'IconResource=..\PortableApps\PortableX\folder icons\' + IconFileName + ',0' + #13#10 +
+    'IconFile=..\PortableApps\PortableX\folder icons\' + IconFileName + #13#10 +
+    'IconIndex=0' + #13#10;
+
+  if SaveStringToFile(DesktopIniPath, Content, False) then begin
+    Exec(ExpandConstant('{cmd}'), '/c attrib +r "' + FolderPath + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec(ExpandConstant('{cmd}'), '/c attrib +s +h "' + DesktopIniPath + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;
 
@@ -272,6 +319,50 @@ begin
   BrowserRadios[0].Checked := True;
 end;
 
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  TargetDir: string;
+  Response: Integer;
+begin
+  Result := True;
+  if CurPageID = wpSelectDir then begin
+    TargetDir := WizardDirValue;
+    if not CanWriteToDirectory(TargetDir) then begin
+      if IsAdminInstallMode then begin
+        MsgBox('Access denied writing to the selected folder.'#13#10#13#10 +
+          'Choose a different location or adjust the folder permissions.',
+          mbError, MB_OK);
+      end else begin
+        Response := MsgBox('The selected install location requires administrator permissions.'#13#10#13#10 +
+          'Restart the installer as administrator?', mbConfirmation, MB_YESNO);
+        if Response = IDYES then begin
+          RestartInstallerAsAdmin(TargetDir);
+          WizardForm.Close;
+        end;
+      end;
+      Result := False;
+      Exit;
+    end;
+
+    PreExistingVideosDir := DirExists(AddBackslash(TargetDir) + 'Videos');
+    PreExistingPicturesDir := DirExists(AddBackslash(TargetDir) + 'Pictures');
+    PreExistingMusicDir := DirExists(AddBackslash(TargetDir) + 'Music');
+    PreExistingDownloadsDir := DirExists(AddBackslash(TargetDir) + 'Downloads');
+    PreExistingDocumentsDir := DirExists(AddBackslash(TargetDir) + 'documents');
+  end;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+var
+  IniPath: string;
+begin
+  Result := False;
+  if (BrowserPage <> nil) and (PageID = BrowserPage.ID) then begin
+    IniPath := ExpandConstant('{app}\PortableApps\PortableX\Data\settings.ini');
+    Result := FileExists(IniPath);
+  end;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   IniPath: string;
@@ -284,28 +375,42 @@ var
 begin
   if CurStep = ssInstall then begin
     IniPath := ExpandConstant('{app}\PortableApps\PortableX\Data\settings.ini');
-    Choice := GetBrowserChoiceIndex;
-    BrowserChoice := 'system';
-    BrowserPath := '';
+    if not FileExists(IniPath) then begin
+      ForceDirectories(ExtractFileDir(IniPath));
+      Choice := GetBrowserChoiceIndex;
+      BrowserChoice := 'system';
+      BrowserPath := '';
 
-    case Choice of
-      0: begin BrowserChoice := 'system'; BrowserPath := ''; end;
-      1: begin BrowserChoice := 'edge'; BrowserPath := ''; end;
-      2: begin BrowserChoice := 'chrome'; BrowserPath := 'PortableApps/GoogleChromePortable/GoogleChromePortable.exe'; end;
-      3: begin BrowserChoice := 'firefox'; BrowserPath := 'PortableApps/FirefoxPortable/FirefoxPortable.exe'; end;
-      4: begin BrowserChoice := 'opera'; BrowserPath := 'PortableApps/OperaPortable/OperaPortable.exe'; end;
-      5: begin BrowserChoice := 'operagx'; BrowserPath := 'PortableApps/OperaGXPortable/OperaGXPortable.exe'; end;
-      6: begin BrowserChoice := 'brave'; BrowserPath := 'PortableApps/BravePortable/brave-portable.exe'; end;
+      case Choice of
+        0: begin BrowserChoice := 'system'; BrowserPath := ''; end;
+        1: begin BrowserChoice := 'edge'; BrowserPath := ''; end;
+        2: begin BrowserChoice := 'chrome'; BrowserPath := 'PortableApps/GoogleChromePortable/GoogleChromePortable.exe'; end;
+        3: begin BrowserChoice := 'firefox'; BrowserPath := 'PortableApps/FirefoxPortable/FirefoxPortable.exe'; end;
+        4: begin BrowserChoice := 'opera'; BrowserPath := 'PortableApps/OperaPortable/OperaPortable.exe'; end;
+        5: begin BrowserChoice := 'operagx'; BrowserPath := 'PortableApps/OperaGXPortable/OperaGXPortable.exe'; end;
+        6: begin BrowserChoice := 'brave'; BrowserPath := 'PortableApps/BravePortable/brave-portable.exe'; end;
+      end;
+
+      SetIniString('Settings', 'BrowserChoice', BrowserChoice, IniPath);
+      if BrowserPath = '' then
+        DeleteIniEntry('Settings', 'BrowserPath', IniPath)
+      else
+        SetIniString('Settings', 'BrowserPath', BrowserPath, IniPath);
     end;
-
-    SetIniString('Settings', 'BrowserChoice', BrowserChoice, IniPath);
-    if BrowserPath = '' then
-      DeleteIniEntry('Settings', 'BrowserPath', IniPath)
-    else
-      SetIniString('Settings', 'BrowserPath', BrowserPath, IniPath);
   end;
 
   if CurStep = ssPostInstall then begin
+    if not PreExistingVideosDir then
+      EnsureDesktopIniIfMissing(ExpandConstant('{app}\Videos'), 'videos.ico');
+    if not PreExistingPicturesDir then
+      EnsureDesktopIniIfMissing(ExpandConstant('{app}\Pictures'), 'pictures.ico');
+    if not PreExistingMusicDir then
+      EnsureDesktopIniIfMissing(ExpandConstant('{app}\Music'), 'music.ico');
+    if not PreExistingDownloadsDir then
+      EnsureDesktopIniIfMissing(ExpandConstant('{app}\Downloads'), 'downloads.ico');
+    if not PreExistingDocumentsDir then
+      EnsureDesktopIniIfMissing(ExpandConstant('{app}\documents'), 'documents.ico');
+
     Choice := GetBrowserChoiceIndex;
     if Choice >= 2 then begin
       Response := MsgBox('Install the selected browser now? This will download it from the internet.', mbConfirmation, MB_YESNO);

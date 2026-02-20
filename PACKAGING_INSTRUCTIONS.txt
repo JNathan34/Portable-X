@@ -12,7 +12,7 @@ exactly to avoid missing assets or broken runtime behavior.
 
 Current Version
 ---------------
-- Portable X version: 1.5
+- Portable X version: 1.1.0
 
 
 Prerequisites
@@ -119,8 +119,8 @@ Verification Checklist (Mandatory)
    - {app}\PortableApps\PortableX\Installers
    - BravePortable is copied as a folder
 8) Version strings are correct:
-   - About > Software shows "Portable X v1.5" and "Version: 1.5"
-   - Notice title shows "Portable X v1.5 - Notice"
+   - About > Software shows "Portable X v1.1.0" and "Version: 1.1.0"
+   - Notice title shows "Portable X v1.1.0 - Notice"
 
 
 Known Warning Messages (Safe to Ignore)

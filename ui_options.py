@@ -27,6 +27,7 @@ def _track_thread(thread):
     except Exception:
         pass
 from config import *
+from app_info import get_app_about_text, get_app_display_name
 from ui_base import GlassPanel, AnimatableWidget
 from ui_search import SearchBar
 import os
@@ -2188,7 +2189,7 @@ class AboutPanel(QWidget):
             net_layout.addWidget(lbl)
         self.network_card = MetricCard("Network", network_icon, dark, self, show_graph=True, show_usage=False, extra_widget=net_extra)
         self.software_card = InfoCard("Software", software_icon, dark, self)
-        self.software_card.set_data("Portable X v1.5", "Version: 1.5\nAuthor: Jacob Nathan")
+        self.software_card.set_data(get_app_display_name(), get_app_about_text())
         self.software_card.set_clickable(True)
         self.software_card.clicked.connect(self.software_clicked)
 
@@ -2540,6 +2541,8 @@ class OptionsPanel(QWidget):
     browser_install_clicked = Signal(str)
     browser_open_folder_clicked = Signal(str)
     software_notice_clicked = Signal()
+    check_updates_clicked = Signal()
+    updates_auto_check_toggled = Signal(bool)
 
     hidden_toggled = Signal(bool)
     expand_default_toggled = Signal(bool)
@@ -2998,8 +3001,8 @@ class OptionsPanel(QWidget):
                 ))
 
             elif category == "Shortcuts":
-                self.add_row("Shortcuts", self.make_keybind_row("Toggle menu key", self.settings.get("menu_key", "F1"), "menu_key", self.keybind_changed))
-                self.add_row("Shortcuts", self.make_keybind_row("Mini mode key", self.settings.get("mini_key", "F2"), "mini_key", self.mini_keybind_changed))
+                self.add_row("Shortcuts", self.make_keybind_row("Toggle menu key", self.settings.get("menu_key", "Ctrl+R"), "menu_key", self.keybind_changed))
+                self.add_row("Shortcuts", self.make_keybind_row("Mini mode key", self.settings.get("mini_key", "Ctrl+E"), "mini_key", self.mini_keybind_changed))
 
             elif category == "Mini menu":
                 self.mini_preview = MiniMenuPreview(self.settings, self.base_dir)
@@ -3025,6 +3028,8 @@ class OptionsPanel(QWidget):
 
             elif category == "System":
                 self.add_row("System", self.make_button_row("Startup apps", self.startup_apps_clicked, button_text="Manage", width=SMALL_CONTROL_WIDTH, height=SMALL_CONTROL_HEIGHT, font_size=SMALL_CONTROL_FONT_SIZE))
+                self.add_row("System", self.make_toggle_row("Auto-check for updates", self.settings.get("updates_auto_check", True), self.updates_auto_check_toggled, align_right=False))
+                self.add_row("System", self.make_button_row("Check for updates", self.check_updates_clicked, button_text="Check", width=SMALL_CONTROL_WIDTH, height=SMALL_CONTROL_HEIGHT, font_size=SMALL_CONTROL_FONT_SIZE))
                 self.fix_settings_row = self.make_button_row("Fix settings", self.fix_settings_clicked, button_text="Fix", width=SMALL_CONTROL_WIDTH, height=SMALL_CONTROL_HEIGHT, font_size=SMALL_CONTROL_FONT_SIZE)
                 self.fix_settings_button = self.fix_settings_row.control if hasattr(self.fix_settings_row, "control") else None
                 self.add_row("System", self.fix_settings_row)
@@ -4200,7 +4205,7 @@ class OptionsPanel(QWidget):
 
             if key == Qt.Key_Escape:
                 button.setChecked(False)
-                button.setText(self.settings.get(setting_key, "F1" if setting_key == "menu_key" else "F2"))
+                button.setText(self.settings.get(setting_key, "Ctrl+R" if setting_key == "menu_key" else "Ctrl+E"))
                 self._keybind_target = None
                 self.releaseKeyboard()
                 return

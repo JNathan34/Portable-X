@@ -15,7 +15,14 @@ import getpass
 import platform
 import stat
 import json
+import update_checker
 import fix_settings
+from app_info import (
+    DEFAULT_GITHUB_REPO,
+    DEFAULT_UPDATE_CHECK_INTERVAL_HOURS,
+    get_app_display_name,
+    get_app_version,
+)
 from ctypes import wintypes
 from PySide6.QtCore import (
     Qt, QSize, QPoint, QPropertyAnimation, QEasingCurve,
@@ -43,7 +50,7 @@ from ui_app_item import AppListItem, AppGridItem
 from ui_category import CategoryItem, CategorySelectionDialog
 from ui_options import OptionsPanel
 
-NOTICE_TITLE = "Portable X v1.5 - Notice"
+NOTICE_TITLE = f"{get_app_display_name()} - Notice"
 NOTICE_BODY = (
     "Created by Jacob Nathan.\n\n"
     "Portable X is a portable application launcher and organizer for your PortableApps setup. "
@@ -238,6 +245,22 @@ class FixSettingsWorker(QObject):
         except Exception as e:
             self.error.emit(str(e))
 
+
+class UpdateCheckWorker(QObject):
+    finished = Signal(dict)
+    error = Signal(str)
+
+    def __init__(self, repo):
+        super().__init__()
+        self.repo = repo
+
+    def run(self):
+        try:
+            result = update_checker.get_latest_github_release(self.repo)
+            self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
+
 # -----------------------------------------------------------------------------
 # GUI Scale (read before QApplication)
 # -----------------------------------------------------------------------------
@@ -314,8 +337,8 @@ class LauncherWindow(QMainWindow):
         self.expand_default = self.settings.get("expand_default", False)
         self.accordion_mode = self.settings.get("accordion", False)
         self.fade_enabled = self.settings.get("fade", True)
-        self.menu_key = self.settings.get("menu_key", "F1")
-        self.mini_key = self.settings.get("mini_key", "F2")
+        self.menu_key = self.settings.get("menu_key", "Ctrl+R")
+        self.mini_key = self.settings.get("mini_key", "Ctrl+E")
         self.gui_scale = self.settings.get("gui_scale", "1.0")
         self.collapse_on_minimize = self.settings.get("collapse_on_minimize", True)
         self.remember_last_screen = self.settings.get("remember_last_screen", False)
@@ -413,6 +436,8 @@ class LauncherWindow(QMainWindow):
         self._refresh_pending = False
         self._initial_refresh_done = False
         self._cache_loaded = False
+        self._last_scanned_apps = []
+        self._apps_scan_completed = False
         
         # Visual Effects
         self.setup_effects()
@@ -459,7 +484,14 @@ class LauncherWindow(QMainWindow):
         self._force_notice = "--show-notice" in sys.argv or "--force-notice" in sys.argv
         self._notice_shown = False
         self._temp_topmost = False
+
+        self._update_check_in_progress = False
+        self._update_progress_dialog = None
+        self._pending_update_url = ""
+        self._pending_update_version = ""
+
         QTimer.singleShot(0, self.maybe_show_notice)
+        QTimer.singleShot(2500, self.maybe_auto_check_updates)
 
     def _set_app_locked(self, locked):
         self._app_locked = locked
@@ -906,6 +938,7 @@ class LauncherWindow(QMainWindow):
         
         self.rebuild_tray_menu()
         self.tray_icon.activated.connect(self.on_tray_activated)
+        self.tray_icon.messageClicked.connect(self._on_tray_message_clicked)
         self.tray_icon.show()
 
     def _tray_exit_color(self):
@@ -938,7 +971,20 @@ class LauncherWindow(QMainWindow):
 
     def _populate_favorites_menu(self, menu):
         menu.clear()
-        apps = [a for a in self.scan_portable_apps() if a.get("is_favorite")]
+        apps = self._get_apps_snapshot()
+        if not apps:
+            if not getattr(self, "_apps_scan_completed", False):
+                if not getattr(self, "_refresh_pending", False):
+                    try:
+                        self.refresh_apps()
+                    except Exception:
+                        pass
+                empty = menu.addAction("Loading apps...")
+            else:
+                empty = menu.addAction("No apps found")
+            empty.setEnabled(False)
+            return
+        apps = [a for a in apps if a.get("is_favorite")]
         if not apps:
             empty = menu.addAction("No favorites yet")
             empty.setEnabled(False)
@@ -948,9 +994,17 @@ class LauncherWindow(QMainWindow):
 
     def _populate_all_apps_menu(self, menu):
         menu.clear()
-        apps = self.scan_portable_apps()
+        apps = self._get_apps_snapshot()
         if not apps:
-            empty = menu.addAction("No apps found")
+            if not getattr(self, "_apps_scan_completed", False):
+                if not getattr(self, "_refresh_pending", False):
+                    try:
+                        self.refresh_apps()
+                    except Exception:
+                        pass
+                empty = menu.addAction("Loading apps...")
+            else:
+                empty = menu.addAction("No apps found")
             empty.setEnabled(False)
             return
 
@@ -1585,7 +1639,8 @@ class LauncherWindow(QMainWindow):
         super().showEvent(event)
         if not getattr(self, "_initial_refresh_done", False):
             self._initial_refresh_done = True
-            QTimer.singleShot(100, self.refresh_apps)
+            # Let the UI become responsive first, then load apps.
+            QTimer.singleShot(900, self.refresh_apps)
 
     def scan_portable_apps(self):
         apps = []
@@ -1761,6 +1816,26 @@ class LauncherWindow(QMainWindow):
             return apps
         return [a for a in apps if not a.get("is_hidden")]
 
+    def _get_apps_snapshot(self):
+        """
+        Fast, non-blocking snapshot of apps for UI elements like tray menus.
+        Prefers the last background scan, falls back to the on-disk cache.
+        Never scans the PortableApps folder on the GUI thread.
+        """
+        apps = []
+        try:
+            apps = list(getattr(self, "_last_scanned_apps", []) or [])
+        except Exception:
+            apps = []
+        if not apps:
+            try:
+                cached = self._load_apps_cache()
+                if cached:
+                    apps = cached
+            except Exception:
+                apps = []
+        return self._filter_apps_for_view(apps)
+
     def load_settings_dict(self):
         config, _ = self.get_settings()
         raw_bg_image = config.get("Settings", "BackgroundImage", fallback="")
@@ -1771,13 +1846,30 @@ class LauncherWindow(QMainWindow):
         )
         if not home_custom_folders and home_custom_folder:
             home_custom_folders = [{"path": home_custom_folder, "label": home_custom_label, "enabled": True}]
+
+        updates_repo = config.get("Updates", "Repo", fallback="").strip() or DEFAULT_GITHUB_REPO
+        updates_auto_check = config.getboolean("Updates", "AutoCheck", fallback=True)
+        try:
+            updates_interval_hours = float(
+                config.get(
+                    "Updates",
+                    "IntervalHours",
+                    fallback=str(DEFAULT_UPDATE_CHECK_INTERVAL_HOURS),
+                )
+            )
+        except Exception:
+            updates_interval_hours = float(DEFAULT_UPDATE_CHECK_INTERVAL_HOURS)
+        try:
+            updates_last_check_epoch = float(config.get("Updates", "LastCheckEpoch", fallback="0"))
+        except Exception:
+            updates_last_check_epoch = 0.0
         return {
             "show_hidden": config.getboolean("Settings", "ShowHidden", fallback=False),
             "expand_default": config.getboolean("Settings", "ExpandDefault", fallback=False),
             "accordion": config.getboolean("Settings", "Accordion", fallback=False),
             "fade": config.getboolean("Settings", "FadeAnimation", fallback=True),
-            "menu_key": config.get("Settings", "MenuKey", fallback="F1"),
-            "mini_key": config.get("Settings", "MiniKey", fallback="F2"),
+            "menu_key": config.get("Settings", "MenuKey", fallback="Ctrl+R"),
+            "mini_key": config.get("Settings", "MiniKey", fallback="Ctrl+E"),
             "gui_scale": config.get("Settings", "GuiScale", fallback="1.0"),
             "collapse_on_minimize": config.getboolean("Settings", "CollapseOnMinimize", fallback=True),
             "remember_last_screen": config.getboolean("Settings", "RememberLastScreen", fallback=False),
@@ -1845,6 +1937,10 @@ class LauncherWindow(QMainWindow):
             "always_on_top": config.getboolean("Settings", "AlwaysOnTop", fallback=False),
             "window_x": config.get("Settings", "WindowX", fallback=None),
             "window_y": config.get("Settings", "WindowY", fallback=None),
+            "updates_repo": updates_repo,
+            "updates_auto_check": updates_auto_check,
+            "updates_interval_hours": updates_interval_hours,
+            "updates_last_check_epoch": updates_last_check_epoch,
         }
 
     def _refresh_category_list(self, settings_config=None):
@@ -1962,17 +2058,37 @@ class LauncherWindow(QMainWindow):
                 apps = _scan_portable_apps_on_disk(get_base_dir(), True)
             except Exception:
                 apps = []
+            try:
+                self._last_scanned_apps = list(apps or [])
+            except Exception:
+                self._last_scanned_apps = []
+            self._apps_scan_completed = True
             self._refresh_apps_from_scan(apps)
 
     def _on_app_scan_finished(self, apps):
+        try:
+            self._last_scanned_apps = list(apps or [])
+        except Exception:
+            self._last_scanned_apps = []
+        self._apps_scan_completed = True
         self._write_apps_cache(apps)
         self._refresh_apps_from_scan(apps)
+        try:
+            if self.mini_pinned_apps:
+                QTimer.singleShot(0, self.rebuild_tray_menu)
+        except Exception:
+            pass
 
     def _on_app_scan_error(self, error):
         try:
             print(f"Error scanning apps: {error}")
         except Exception:
             pass
+        try:
+            self._last_scanned_apps = []
+        except Exception:
+            pass
+        self._apps_scan_completed = True
         self._refresh_apps_from_scan([])
 
     def _refresh_apps_from_scan(self, apps, keep_loading=False, keep_pending=False):
@@ -2391,6 +2507,11 @@ class LauncherWindow(QMainWindow):
         self.settings["current_category"] = prev_category
         self.settings["settings_search"] = prev_search
         self.settings["always_on_top"] = self.always_on_top
+        try:
+            updates_enabled, _, _, _ = self._read_updates_config()
+            self.settings["updates_auto_check"] = bool(updates_enabled)
+        except Exception:
+            pass
 
         self.options_panel = OptionsPanel(self.settings, self)
         self._options_target_widget = target_widget
@@ -2443,6 +2564,8 @@ class LauncherWindow(QMainWindow):
         self.options_panel.manage_pinned_clicked.connect(self.open_pinned_apps_dialog)
         self.options_panel.startup_apps_clicked.connect(self.open_startup_apps_dialog)
         self.options_panel.fix_settings_clicked.connect(self.run_fix_settings)
+        self.options_panel.check_updates_clicked.connect(lambda: self.check_for_updates(manual=True))
+        self.options_panel.updates_auto_check_toggled.connect(self.set_updates_auto_check)
         self.options_panel.browser_changed.connect(self.set_default_browser)
         self.options_panel.browser_install_clicked.connect(self.open_browser_download)
         self.options_panel.browser_open_folder_clicked.connect(self.open_browser_folder)
@@ -2972,6 +3095,306 @@ class LauncherWindow(QMainWindow):
                 os.startfile(folder)
             else:
                 os.startfile(get_base_dir())
+
+    # -------------------------------------------------------------------------
+    # Updates
+    # -------------------------------------------------------------------------
+
+    def set_updates_auto_check(self, enabled):
+        self._write_settings_value_quiet("Updates", "AutoCheck", "true" if enabled else "false")
+        try:
+            self.settings["updates_auto_check"] = bool(enabled)
+            if hasattr(self, "options_panel") and self.options_panel:
+                self.options_panel.settings["updates_auto_check"] = bool(enabled)
+        except Exception:
+            pass
+
+    def _read_updates_config(self):
+        enabled = True
+        repo = ""
+        interval_hours = float(DEFAULT_UPDATE_CHECK_INTERVAL_HOURS)
+        last_check_epoch = 0.0
+
+        try:
+            config, _ = self.get_settings()
+            repo = config.get("Updates", "Repo", fallback="").strip()
+            enabled = config.getboolean("Updates", "AutoCheck", fallback=True)
+            try:
+                interval_hours = float(
+                    config.get(
+                        "Updates",
+                        "IntervalHours",
+                        fallback=str(DEFAULT_UPDATE_CHECK_INTERVAL_HOURS),
+                    )
+                )
+            except Exception:
+                interval_hours = float(DEFAULT_UPDATE_CHECK_INTERVAL_HOURS)
+            try:
+                last_check_epoch = float(config.get("Updates", "LastCheckEpoch", fallback="0"))
+            except Exception:
+                last_check_epoch = 0.0
+        except Exception:
+            pass
+
+        repo = repo or DEFAULT_GITHUB_REPO
+        return enabled, repo, max(1.0, interval_hours), last_check_epoch
+
+    def _write_settings_value_quiet(self, section, key, value):
+        try:
+            config, path = self.get_settings()
+            if not config.has_section(section):
+                config.add_section(section)
+            if value is None:
+                config.remove_option(section, key)
+            else:
+                config.set(section, key, str(value))
+            with open(path, "w") as f:
+                config.write(f)
+        except Exception:
+            pass
+
+    def _updates_repo(self):
+        _, repo, _, _ = self._read_updates_config()
+        return repo
+
+    def _updates_interval_hours(self):
+        _, _, interval_hours, _ = self._read_updates_config()
+        return interval_hours
+
+    def _updates_last_check_epoch(self):
+        _, _, _, last_check_epoch = self._read_updates_config()
+        return last_check_epoch
+
+    def maybe_auto_check_updates(self):
+        try:
+            enabled, repo, interval_hours, last_check = self._read_updates_config()
+            if not enabled:
+                return
+            if not repo:
+                return
+            now = time.time()
+            if now - last_check < interval_hours * 3600:
+                return
+            # Startup auto-check: be silent if up-to-date, but prompt if an update exists.
+            self.check_for_updates(manual=False, prompt_on_update=True, allow_never=True)
+        except Exception:
+            pass
+
+    def check_for_updates(self, manual=False, prompt_on_update=False, allow_never=False):
+        if getattr(self, "_update_check_in_progress", False):
+            if manual:
+                QMessageBox.information(self, "Updates", "An update check is already running.")
+            return
+
+        _, repo, _, _ = self._read_updates_config()
+        if not repo:
+            if not manual:
+                return
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("Updates")
+            msg.setText("Update checking is not configured yet.")
+            msg.setInformativeText(
+                "Add this to your settings.ini:\n\n"
+                "[Updates]\n"
+                "Repo = owner/repo\n\n"
+                "Then try again."
+            )
+            open_btn = msg.addButton("Open settings.ini", QMessageBox.ActionRole)
+            msg.addButton(QMessageBox.Ok)
+            msg.exec()
+            if msg.clickedButton() == open_btn:
+                try:
+                    self.open_settings_file()
+                except Exception:
+                    pass
+            return
+
+        self._update_check_in_progress = True
+        self._update_check_cancelled = False
+        self._update_check_manual = bool(manual)
+        self._update_check_prompt_on_update = bool(prompt_on_update)
+        self._update_check_allow_never = bool(allow_never)
+
+        if manual:
+            try:
+                dlg = QProgressDialog("Checking for updates...", "Hide", 0, 0, self)
+                dlg.setWindowTitle("Updates")
+                dlg.setWindowModality(Qt.WindowModal)
+                dlg.setMinimumDuration(0)
+                dlg.setAutoClose(False)
+                dlg.setAutoReset(False)
+                dlg.canceled.connect(self._cancel_update_check)
+                dlg.show()
+                self._update_progress_dialog = dlg
+            except Exception:
+                self._update_progress_dialog = None
+
+        self._write_settings_value_quiet("Updates", "LastCheckEpoch", str(int(time.time())))
+
+        try:
+            self._update_thread = QThread(self)
+            self._update_worker = UpdateCheckWorker(repo)
+            self._update_worker.moveToThread(self._update_thread)
+            self._update_thread.started.connect(self._update_worker.run)
+            # Connect directly to ensure the slot runs on the GUI thread (queued connection).
+            self._update_worker.finished.connect(self._on_update_check_finished)
+            self._update_worker.error.connect(self._on_update_check_failed)
+            self._update_worker.finished.connect(self._update_worker.deleteLater)
+            self._update_worker.error.connect(self._update_worker.deleteLater)
+            self._update_worker.finished.connect(self._update_thread.quit)
+            self._update_worker.error.connect(self._update_thread.quit)
+            self._update_thread.finished.connect(self._update_thread.deleteLater)
+            self._update_thread.start()
+        except Exception as e:
+            self._on_update_check_failed(str(e))
+
+    def _cancel_update_check(self):
+        # We can't reliably abort the in-flight network request, so treat this as "Hide".
+        self._close_update_progress()
+
+    def _close_update_progress(self):
+        if hasattr(self, "_update_progress_dialog") and self._update_progress_dialog:
+            try:
+                self._update_progress_dialog.close()
+            except Exception:
+                pass
+            self._update_progress_dialog = None
+
+    def _show_update_available_dialog(self, current_version, latest_version, url, allow_never=False):
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Information)
+        msg.setWindowTitle("Update Available")
+        msg.setText("A new version of Portable X is available")
+        msg.setInformativeText(f"Installed: v{current_version}\nLatest: v{latest_version}")
+        download_btn = msg.addButton("Download Update", QMessageBox.ActionRole)
+        msg.addButton("Later", QMessageBox.RejectRole)
+        never_btn = None
+        if allow_never:
+            never_btn = msg.addButton("Never", QMessageBox.DestructiveRole)
+        msg.setDefaultButton(download_btn)
+        msg.exec()
+        clicked = msg.clickedButton()
+        if clicked == download_btn:
+            if self._confirm_web_action():
+                self.open_url(url)
+        elif allow_never and never_btn and clicked == never_btn:
+            self.set_updates_auto_check(False)
+
+    def _on_update_check_finished(self, info):
+        manual = bool(getattr(self, "_update_check_manual", False))
+        prompt_on_update = bool(getattr(self, "_update_check_prompt_on_update", False))
+        allow_never = bool(getattr(self, "_update_check_allow_never", False))
+        try:
+            self._update_check_in_progress = False
+            self._close_update_progress()
+
+            info = info or {}
+            latest_version = str(info.get("version") or "").strip()
+            html_url = str(info.get("html_url") or "").strip()
+            repo = str(info.get("repo") or "").strip() or self._updates_repo()
+            current_version = (get_app_version() or "").strip()
+
+            if latest_version:
+                self._write_settings_value_quiet("Updates", "LatestVersion", latest_version)
+            if html_url:
+                self._write_settings_value_quiet("Updates", "LatestUrl", html_url)
+
+            if not latest_version:
+                if manual:
+                    QMessageBox.warning(
+                        self, "Update Check Failed", "Failed to check for updates (no version found)."
+                    )
+                return
+
+            try:
+                has_update = update_checker.is_newer_version(current_version, latest_version)
+            except Exception as e:
+                if manual:
+                    msg = QMessageBox(self)
+                    msg.setIcon(QMessageBox.Warning)
+                    msg.setWindowTitle("Update Check Failed")
+                    msg.setText("Failed to check for updates.")
+                    msg.setInformativeText(str(e))
+                    msg.setStandardButtons(QMessageBox.Ok)
+                    msg.exec()
+                return
+
+            if has_update:
+                if not html_url and repo:
+                    html_url = f"https://github.com/{repo}/releases/latest"
+                self._pending_update_url = html_url
+                self._pending_update_version = latest_version
+
+                if manual or prompt_on_update:
+                    self._show_update_available_dialog(
+                        current_version,
+                        latest_version,
+                        html_url,
+                        allow_never=allow_never,
+                    )
+                else:
+                    try:
+                        if hasattr(self, "tray_icon") and self.tray_icon:
+                            self.tray_icon.showMessage(
+                                "Update Available",
+                                f"A new version of Portable X is available\nLatest: v{latest_version}",
+                                QSystemTrayIcon.Information,
+                                15000,
+                            )
+                    except Exception:
+                        pass
+                return
+
+            if manual:
+                QMessageBox.information(
+                    self,
+                    "Updates",
+                    f"You are already on the latest version.\nInstalled: v{current_version}",
+                )
+        except Exception as e:
+            self._update_check_in_progress = False
+            self._close_update_progress()
+            if manual:
+                msg = QMessageBox(self)
+                msg.setIcon(QMessageBox.Warning)
+                msg.setWindowTitle("Update Check Failed")
+                msg.setText("Failed to check for updates.")
+                msg.setInformativeText(str(e))
+                msg.setStandardButtons(QMessageBox.Ok)
+                msg.exec()
+        finally:
+            self._update_check_manual = False
+            self._update_check_prompt_on_update = False
+            self._update_check_allow_never = False
+
+    def _on_update_check_failed(self, error):
+        manual = bool(getattr(self, "_update_check_manual", False))
+        try:
+            self._update_check_in_progress = False
+            self._close_update_progress()
+
+            if manual:
+                msg = QMessageBox(self)
+                msg.setIcon(QMessageBox.Warning)
+                msg.setWindowTitle("Update Check Failed")
+                msg.setText("Failed to check for updates.")
+                msg.setInformativeText(str(error or ""))
+                msg.setStandardButtons(QMessageBox.Ok)
+                msg.exec()
+        except Exception:
+            pass
+        finally:
+            self._update_check_manual = False
+            self._update_check_prompt_on_update = False
+            self._update_check_allow_never = False
+
+    def _on_tray_message_clicked(self):
+        url = getattr(self, "_pending_update_url", "") or ""
+        if not url:
+            return
+        if self._confirm_web_action():
+            self.open_url(url)
 
     def maybe_show_notice(self):
         if self._notice_shown:
@@ -4144,7 +4567,7 @@ class LauncherWindow(QMainWindow):
         self.accordion_mode = self.settings["accordion"]
         self.fade_enabled = self.settings["fade"]
         self.menu_key = self.settings["menu_key"]
-        self.mini_key = self.settings.get("mini_key", "F2")
+        self.mini_key = self.settings.get("mini_key", "Ctrl+E")
         self.gui_scale = self.settings.get("gui_scale", "1.0")
         self.collapse_on_minimize = self.settings["collapse_on_minimize"]
         self.remember_last_screen = self.settings.get("remember_last_screen", False)
@@ -4268,21 +4691,77 @@ class LauncherWindow(QMainWindow):
         pinned = set(self.mini_pinned_apps or [])
         if not pinned:
             return []
-        apps = self.scan_portable_apps()
-        return [a for a in apps if self.get_app_key(a["exe"]) in pinned]
+        apps = self._get_apps_snapshot()
+        if apps:
+            return [a for a in apps if self.get_app_key(a.get("exe", "")) in pinned]
+
+        base_dir = get_base_dir()
+        hidden_map = {}
+        if not self.show_hidden:
+            try:
+                config, _ = self.get_settings()
+                if config.has_section("Hidden"):
+                    for key in self.mini_pinned_apps or []:
+                        if not key:
+                            continue
+                        hidden_map[key] = config.getboolean("Hidden", key, fallback=False)
+            except Exception:
+                hidden_map = {}
+        pinned_apps = []
+        for key in self.mini_pinned_apps or []:
+            if not key:
+                continue
+            if not self.show_hidden and hidden_map.get(key, False):
+                continue
+            exe_path = key
+            if not os.path.isabs(exe_path):
+                exe_path = os.path.normpath(os.path.join(base_dir, exe_path))
+            if not exe_path or not os.path.exists(exe_path):
+                continue
+            name = QFileInfo(exe_path).baseName() or os.path.splitext(os.path.basename(exe_path))[0] or "App"
+            pinned_apps.append(
+                {
+                    "name": name,
+                    "exe": exe_path,
+                    "icon": exe_path,
+                    "is_favorite": False,
+                    "is_hidden": False,
+                    "category": "No Category",
+                    "version": "",
+                    "description": "",
+                }
+            )
+        return pinned_apps
 
     def launch_startup_apps(self):
         if not self.startup_apps:
             return
-        apps = self.scan_portable_apps()
-        app_map = {self.get_app_key(a["exe"]): a for a in apps}
+        base_dir = get_base_dir()
+        hidden_map = {}
+        if not self.show_hidden:
+            try:
+                config, _ = self.get_settings()
+                if config.has_section("Hidden"):
+                    for key in self.startup_apps:
+                        if not key:
+                            continue
+                        hidden_map[key] = config.getboolean("Hidden", key, fallback=False)
+            except Exception:
+                hidden_map = {}
         for key in self.startup_apps:
-            app = app_map.get(key)
-            if app:
-                try:
-                    subprocess.Popen(app["exe"], cwd=os.path.dirname(app["exe"]))
-                except Exception as e:
-                    print(f"Error launching startup app {app['exe']}: {e}")
+            if not key:
+                continue
+            if not self.show_hidden and hidden_map.get(key, False):
+                continue
+            exe_path = key
+            if not os.path.isabs(exe_path):
+                exe_path = os.path.normpath(os.path.join(base_dir, exe_path))
+            if not exe_path or not os.path.exists(exe_path):
+                continue
+            try:
+                subprocess.Popen(exe_path, cwd=os.path.dirname(exe_path))
+            except Exception as e:
+                print(f"Error launching startup app {exe_path}: {e}")
 
     def run_fix_settings(self):
         if getattr(self, "_fix_settings_running", False):
